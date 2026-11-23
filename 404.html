@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Таблица с фото</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calm and practical, a pocket ledger you carry around
+   IDEA: a spreadsheet where every note is a small card with snapshots pinned to it
+   PICTURE: the live grid itself; amber corner flags mark cells that have notes
+   COLOUR and TYPE: white paper, ink blue-black, one amber accent; Inter
+   LAYOUT: slim header, grid full width, bottom sheet for the note, cell bar at foot */
+:root{color-scheme:light dark;
+--bg:light-dark(#ffffff,#121417);--ink:light-dark(#17202a,#eef1f4);--mut:light-dark(#66707a,#9aa3ad);
+--line:light-dark(#dfe3e8,#2b3036);--head:light-dark(#f4f6f8,#1b1f24);--sel:light-dark(#e8f0ff,#1d2a40);
+--acc:#f5a300;--accInk:#4a3000;--blue:light-dark(#1f6feb,#5b9bff);--card:light-dark(#ffffff,#1a1d21);--red:light-dark(#c62828,#ff7b72)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,-apple-system,sans-serif;overflow-x:clip;padding-bottom:190px}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+header{display:flex;align-items:center;gap:12px;padding:14px max(4vw,14px) 6px;flex-wrap:wrap}
+#title{flex:1 1 220px;font:700 28px/1.1 Inter,system-ui,sans-serif;border:0;background:none;color:var(--ink);padding:6px 0}
+#status{font-size:13px;color:var(--mut)}
+.tools{display:flex;gap:8px;padding:6px max(4vw,14px) 12px;flex-wrap:wrap}
+.btn{min-height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-weight:600;font-size:15px}
+.btn.pri{background:var(--blue);color:#fff;border-color:transparent}
+.btn.amb{background:var(--acc);color:var(--accInk);border-color:transparent}
+.btn.dang{color:var(--red)}
+.wrap{overflow:auto;border-top:1px solid var(--line);border-bottom:1px solid var(--line);max-height:calc(100dvh - 210px)}
+table{border-collapse:separate;border-spacing:0;min-width:100%}
+th,td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:0;position:relative;background:var(--bg)}
+thead th{position:sticky;top:0;z-index:2;background:var(--head)}
+th.rn,td.rn{position:sticky;left:0;z-index:1;background:var(--head);width:44px;min-width:44px}
+thead th.rn{z-index:3}
+.hb{display:block;width:100%;min-height:44px;border:0;background:none;font-weight:600;font-size:14px;text-align:left;padding:4px 14px 4px 8px;white-space:normal;overflow-wrap:anywhere;hyphens:auto;line-height:1.2}
+.hb small{display:block;font-weight:500;color:var(--mut);font-size:11px;line-height:1}
+td.rn .hb{text-align:center;color:var(--mut);padding:0}
+td input{display:block;width:150px;min-height:44px;border:0;background:transparent;color:var(--ink);font:16px Inter,system-ui,sans-serif;padding:8px 10px}
+td.on{box-shadow:inset 0 0 0 2px var(--blue);background:var(--sel)}
+.flag{position:absolute;top:0;right:0;width:26px;height:26px;border:0;padding:0;background:linear-gradient(225deg,var(--acc) 0 11px,transparent 11px)}
+.flag i{position:absolute;bottom:-2px;left:-4px;font:700 10px/1 Inter,sans-serif;font-style:normal;color:var(--mut)}
+.hint{padding:12px max(4vw,14px);color:var(--mut);font-size:14px;max-width:62ch}
+.cellbar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;align-items:center;gap:10px;padding:10px max(4vw,14px) calc(10px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);transform:translateY(110%);transition:transform .2s}
+.cellbar.show{transform:none}
+.cellbar b{font-size:15px}.cellbar span{flex:1;color:var(--mut);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.veil{position:fixed;inset:0;z-index:30;background:rgb(0 0 0/.45);display:none;align-items:flex-end;justify-content:center}
+.veil.show{display:flex}
+.sheet{width:min(640px,100%);max-height:92dvh;overflow:auto;background:var(--card);border-radius:18px 18px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom))}
+.sheet h2{margin:0 0 4px;font-size:20px;line-height:1.2}
+.sheet p.sub{margin:0 0 12px;color:var(--mut);font-size:14px}
+textarea{width:100%;min-height:110px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:16px/1.45 Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink);resize:vertical}
+.ph{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin:12px 0}
+.ph button{aspect-ratio:1;border:0;padding:0;border-radius:10px;overflow:hidden;background:var(--head)}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph .add{border:2px dashed var(--line);background:none;color:var(--mut);font-size:14px;font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.row .sp{flex:1}
+.sheet input.name{width:100%;min-height:44px;border:1px solid var(--line);border-radius:12px;padding:8px 12px;font:16px Inter,sans-serif;background:var(--bg);color:var(--ink)}
+.viewer{position:fixed;inset:0;z-index:40;background:#000;display:none;flex-direction:column}
+.viewer.show{display:flex}
+.viewer img{flex:1;min-height:0;width:100%;object-fit:contain}
+.viewer .row{padding:10px 14px calc(14px + env(safe-area-inset-bottom));margin:0}
+.viewer .btn{background:#222;color:#fff;border-color:#333}
+.list{padding:0 max(4vw,14px)}
+.note{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left}
+.note img{width:56px;height:56px;object-fit:cover;border-radius:8px;flex:none}
+.note b{display:block;font-size:14px}.note span{color:var(--mut);font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.busy{opacity:.5;pointer-events:none}
+.lbl{display:grid;gap:4px;font-size:14px;color:var(--mut);margin-bottom:10px}
+.fh{position:absolute;right:-7px;bottom:-7px;width:22px;height:22px;border-radius:50%;background:var(--acc);border:3px solid var(--bg);z-index:4;touch-action:none;cursor:ns-resize}
+.fh::before{content:"";position:absolute;inset:-12px}
+td.fsel{background:color-mix(in srgb,var(--acc) 22%,var(--bg));box-shadow:inset 0 0 0 1px var(--acc)}
+thead{user-select:none;-webkit-user-select:none}
+.rz{position:absolute;top:0;right:0;width:22px;height:100%;z-index:4;touch-action:none;cursor:col-resize}
+.rz::after{content:"";position:absolute;top:22%;bottom:22%;right:3px;width:3px;border-radius:2px;background:var(--line)}
+th.rzing .rz::after,.rz:hover::after{background:var(--blue)}
+.toast{position:fixed;left:50%;bottom:calc(190px + env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;pointer-events:none;z-index:25;display:flex;gap:8px;align-items:center;padding:8px 8px 8px 14px;border-radius:14px;background:var(--ink);color:var(--bg);font-size:14px;transition:.2s;max-width:calc(100vw - 24px)}
+.toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.toast .btn{min-height:38px;background:transparent;color:var(--bg);border-color:color-mix(in srgb,var(--bg) 35%,transparent)}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:4px max(4vw,14px) 8px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;min-height:40px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:14px;font-weight:600;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.tab[aria-current=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tab.add{color:var(--blue);border-style:dashed}
+td input.num{text-align:right;font-variant-numeric:tabular-nums}
+td input.err{color:var(--red);text-align:right}
+td input.fx{font-family:ui-monospace,Menlo,monospace;font-size:15px;text-align:left}
+tfoot td{position:sticky;bottom:0;z-index:1;background:var(--head);font-weight:700;text-align:right;padding:10px;font-variant-numeric:tabular-nums;white-space:nowrap;border-top:2px solid var(--line)}
+tfoot td:not(.rn){padding:0}.ft{padding:10px;overflow:hidden;text-overflow:ellipsis}
+tfoot td.rn{z-index:3;text-align:center;color:var(--mut)}
+.cellbar{flex-direction:column;align-items:stretch;gap:8px}
+.cbtop{display:flex;gap:10px;align-items:baseline;min-width:0}
+.cbtools{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1*max(4vw,14px));padding:0 max(4vw,14px)}
+.cbtools::-webkit-scrollbar{display:none}.cbtools .btn{flex:none}
+td.rsel{background:color-mix(in srgb,var(--blue) 16%,var(--bg))}
+td.rsel input{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--blue) 45%,transparent)}
+.hdr-btns{display:flex;gap:6px}
+.sw{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.sw button{width:40px;height:40px;border-radius:50%;border:2px solid var(--line);padding:0}
+.sw button[aria-pressed=true]{outline:3px solid var(--blue);outline-offset:2px}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px}
+.seg .btn[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.fl{font-size:13px;color:var(--mut);margin-top:6px}
+.help{padding:4px max(4vw,14px) 12px;color:var(--mut);font-size:14px;max-width:70ch}
+.help summary{cursor:pointer;color:var(--blue);font-weight:600;min-height:44px;display:flex;align-items:center}
+.help li{margin:4px 0}
+.cellbar .stats{font-size:13px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cellbar .stats b{color:var(--ink);font-size:13px}
+.btn.sm{min-width:44px;padding:0 12px}
+@media(max-width:600px){#title{font-size:24px}}
+</style>
+</head>
+<body>
+<header>
+  <input id="title" aria-label="Название таблицы" value="Моя таблица">
+  <span id="status">Загрузка…</span>
+  <span class="hdr-btns"><button class="btn sm" id="undo" aria-label="Отменить" disabled>↶</button><button class="btn sm" id="redo" aria-label="Повторить" disabled>↷</button></span>
+</header>
+<nav class="tabs" id="tabs" aria-label="Таблицы"></nav>
+<div class="tools">
+  <button class="btn pri" id="addRow">+ Строка</button>
+  <button class="btn" id="addRows">+10 строк</button>
+  <button class="btn" id="addCol">+ Столбец</button>
+  <button class="btn" id="showNotes">Все комментарии</button>
+</div>
+<div class="wrap"><table id="grid"></table></div>
+<details class="help"><summary>Как пользоваться</summary><ul>
+<li><b>Таблицы</b> — вкладки сверху. «+ Таблица» создаёт новую; повторное нажатие на открытую вкладку — переименовать, копия, удалить.</li>
+<li><b>Строки и столбцы</b> — «+ Строка», «+10 строк», Enter в последней строке. Нажми на номер строки или заголовок столбца — вставить, удалить, сортировать, ширина.</li>
+<li><b>Ширина столбца</b> — потяни правый край заголовка; двойное касание по краю — по содержимому.</li>
+<li><b>Числа</b> — дробные через запятую: 2,5. Можно 15% и 1500 ₽ — формат включится сам.</li>
+<li><b>Даты</b> — 24.11.2026 или 24.11, либо кнопка «Дата» внизу (календарь).</li>
+<li><b>Формулы</b> начинаются с «=»: =B1*C1, =СУММ(B1:B8), =СРЗНАЧ, =МИН, =МАКС, =СЧЁТ, =ОКРУГЛ(B1;2), =ЕСЛИ(B1&gt;10;1;0), =СЕГОДНЯ(), =B2-B1 (дней между датами), =ДАТАМЕС(B1;1). $B$1 — не сдвигается.</li>
+<li><b>Автозаполнение</b> — потяни жёлтую точку выбранной ячейки вниз или вбок.</li>
+<li><b>Диапазон</b> — «Выделить диапазон», затем нажми последнюю ячейку: внизу сумма, среднее, мин, макс; можно оформить или очистить сразу всё.</li>
+<li><b>Формат</b> — жирный, курсив, цвет, заливка, выравнивание, рубли, проценты.</li>
+<li><b>Комментарий с фото</b> — кнопка «Комментарий»; фото с камеры или из галереи. Ячейки с комментарием помечены жёлтым уголком.</li>
+<li><b>↶ ↷</b> в шапке — отменить и повторить.</li>
+</ul></details>
+
+<div class="cellbar" id="cellbar">
+  <div class="cbtop"><b id="cbRef">A1</b><span id="cbInfo"></span></div>
+  <div class="cbtools"><button class="btn amb" id="cbOpen">Комментарий</button><button class="btn sm" id="cbSum" aria-label="Вставить сумму ячеек выше">Σ</button><button class="btn sm" id="cbDate">Дата</button><button class="btn sm" id="cbCenter" aria-pressed="false">По центру</button><button class="btn sm" id="cbFmt">Формат</button><button class="btn sm" id="cbRange">Выделить диапазон</button><button class="btn sm dang" id="cbClear" hidden>Очистить</button></div>
+  <div class="stats" id="cbStats"></div>
+</div>
+
+<div class="veil" id="noteVeil"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="nTitle">
+  <h2 id="nTitle">Комментарий</h2><p class="sub" id="nSub"></p>
+  <textarea id="nText" placeholder="Текст комментария"></textarea>
+  <div class="ph" id="nPhotos"></div>
+  <input type="file" id="file" accept="image/*" multiple hidden>
+  <div class="row"><button class="btn dang" id="nDel">Удалить комментарий</button><span class="sp"></span><button class="btn pri" id="nDone">Готово</button></div>
+</div></div>
+
+<div class="veil" id="menuVeil"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <h2 id="mTitle"></h2><p class="sub" id="mSub"></p><div id="mBody"></div>
+</div></div>
+
+<div class="veil" id="listVeil"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="lTitle">
+  <h2 id="lTitle">Все комментарии</h2><div id="lBody" class="list"></div>
+  <div class="row"><span class="sp"></span><button class="btn pri" data-close>Закрыть</button></div>
+</div></div>
+
+<div class="veil" id="dateVeil"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+  <h2 id="dTitle">Дата</h2><p class="sub">Выбери дату в календаре. Время можно не указывать.</p>
+  <label class="lbl">Дата<input type="date" id="dIn" class="name"></label>
+  <label class="lbl">Время<input type="time" id="tIn" class="name"></label>
+  <div class="row"><button class="btn" id="dToday">Сегодня</button><button class="btn dang" id="dClear">Очистить</button><span class="sp"></span><button class="btn pri" id="dOk">Готово</button></div>
+</div></div>
+
+<div class="toast" id="toast" role="status"><span id="tMsg"></span><button class="btn sm" id="tAlt"></button><button class="btn sm" id="tUndo">Отменить</button></div>
+
+<div class="viewer" id="viewer"><img id="vImg" alt="Фото из комментария">
+  <div class="row"><button class="btn" id="vDel">Удалить фото</button><span class="sp"></span><button class="btn" id="vClose">Закрыть</button></div>
+</div>
+
+<script>
+{
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,10);
+const letter=i=>{let s='';i++;while(i>0){const m=(i-1)%26;s=String.fromCharCode(65+m)+s;i=Math.floor((i-1)/26)}return s};
+const LS='photo-sheet-v1';
+const blank=(title='Моя таблица')=>{const cols=['Название','Кол-во','Место'].map(name=>({id:uid(),name}));return{id:uid(),title,cols,rows:Array.from({length:8},()=>({id:uid(),v:{}})),notes:{}}};
+// D holds every table; S is the table on screen
+let D=null,S=null,mode='local',ref=null,assets=null,active=null,editing=null,viewing=null;
+function use(d){D=d;S=D.tables.find(t=>t.id===D.cur)||D.tables[0];D.cur=S.id}
+function migrate(d){
+  if(d&&Array.isArray(d.tables)&&d.tables.length&&d.tables.every(valid)){d.tables.forEach(t=>t.id=t.id||uid());return d}
+  if(valid(d)){const t={...d,id:d.id||uid()};return{tables:[t],cur:t.id}}
+  return null;
+}
+use({tables:[blank()]});
+
+// ---------- Telegram Mini App without a server ----------
+// Tables live in Telegram CloudStorage (tied to the user's Telegram account, about 4 MB per bot).
+// Each value holds at most 4096 characters, so the JSON is split into chunks. Two slots, a and b,
+// take turns: the new copy is written in full first and only then does "sheet_cur" point to it,
+// so a save cut off halfway leaves the previous copy intact.
+const TG=window.Telegram&&Telegram.WebApp;
+const CS=TG&&TG.initData&&TG.isVersionAtLeast&&TG.isVersionAtLeast('6.9')?TG.CloudStorage:null;
+const CHUNK=4000;
+const csCall=(fn,...a)=>new Promise((ok,no)=>CS[fn](...a,(e,v)=>e?no(e):ok(v)));
+let csCur={slot:'b',n:0};
+async function csLoad(){
+  const ptr=(await csCall('getItem','sheet_cur'))||'';
+  const m=/^([ab]):(\d+)$/.exec(ptr);if(!m)return null;
+  csCur={slot:m[1],n:+m[2]};
+  const keys=Array.from({length:csCur.n},(_,i)=>csCur.slot+'_'+i),v={};
+  for(let i=0;i<keys.length;i+=50)Object.assign(v,await csCall('getItems',keys.slice(i,i+50)));
+  return JSON.parse(keys.map(k=>v[k]||'').join(''));
+}
+async function csSave(str){
+  const n=Math.ceil(str.length/CHUNK);
+  if(n>500)throw{code:'too_large'};
+  const slot=csCur.slot==='a'?'b':'a',old=csCur;
+  for(let i=0;i<n;i++)await csCall('setItem',slot+'_'+i,str.slice(i*CHUNK,(i+1)*CHUNK));
+  await csCall('setItem','sheet_cur',slot+':'+n);
+  csCur={slot,n};
+  const stale=Array.from({length:old.n},(_,i)=>old.slot+'_'+i);
+  if(stale.length)await csCall('removeItems',stale).catch(()=>{});
+}
+
+// ---------- storage ----------
+const status=t=>$('#status').textContent=t;
+let timer=0,saving=false,again=false;
+// undo history: one step per pause in editing
+let undoS=[],redoS=[],last=null;
+function snap(){const cur=JSON.stringify(D);if(last!==null&&cur!==last){undoS.push(last);if(undoS.length>60)undoS.shift();redoS=[]}last=cur;undoBtns()}
+function undoBtns(){$('#undo').disabled=!undoS.length;$('#redo').disabled=!redoS.length}
+function travel(from,to){clearTimeout(timer);snap();if(!from.length)return;to.push(last);last=from.pop();
+  use(JSON.parse(last));active=null;sel=null;rangeMode=false;render();undoBtns();status('Сохраняю…');flush(true)}
+$('#undo').onclick=()=>travel(undoS,redoS);
+$('#redo').onclick=()=>travel(redoS,undoS);
+function save(){status('Сохраняю…');clearTimeout(timer);timer=setTimeout(flush,mode==='tg'?1500:600)}
+async function flush(noSnap){
+  if(noSnap!==true)snap();
+  if(mode==='tg'){
+    try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){}
+    if(saving){again=true;return}
+    saving=true;
+    try{await csSave(JSON.stringify(D));status('Сохранено в Telegram')}
+    catch(e){status(e&&e.code==='too_large'?'Таблицы слишком большие для облака Telegram (около 2 МБ)':'Не удалось сохранить в Telegram, копия есть на телефоне')}
+    saving=false;if(again){again=false;flush()}
+  }else{
+    try{localStorage.setItem(LS,JSON.stringify(D));status('Сохранено на этом устройстве')}
+    catch(e){status('Не хватает места на устройстве')}
+  }
+}
+function valid(d){return d&&Array.isArray(d.cols)&&Array.isArray(d.rows)&&typeof d.notes==='object'}
+try{const d=migrate(JSON.parse(localStorage.getItem(LS)||'null'));if(d)use(d)}catch(e){}
+status('Сохраняется на этом устройстве');last=JSON.stringify(D);
+
+if(TG){
+  try{TG.ready();TG.expand();TG.disableVerticalSwipes&&TG.disableVerticalSwipes()}catch(e){}
+  const theme=()=>{if(TG.colorScheme)document.documentElement.dataset.theme=TG.colorScheme};
+  theme();try{TG.onEvent('themeChanged',theme)}catch(e){}
+}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+(async()=>{
+  if(!CS){status(TG&&TG.initData?'Обнови Telegram: нужна более новая версия':'Открыто не в Telegram: сохраняется на этом устройстве');return}
+  try{
+    let d=null;
+    try{d=await csLoad()}catch(e){
+      // unreadable cloud copy: keep working from this phone's copy and do not overwrite the cloud until the next edit
+      status('Облачная копия не прочиталась, открыта копия с телефона');mode='tg';render();return}
+    mode='tg';
+    const got=d&&migrate(d);
+    if(got)use(got);else await csSave(JSON.stringify(D));
+    active=null;
+    status('Сохранено в Telegram');last=JSON.stringify(D);undoS=[];redoS=[];undoBtns();render();
+  }catch(e){status('Не удалось открыть хранилище Telegram, сохраняю на этом устройстве')}
+})();
+
+// ---------- photos: kept on this phone (IndexedDB) ----------
+let idbP=null;
+function idb(){return idbP||(idbP=new Promise((ok,no)=>{const r=indexedDB.open('photo-sheet',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('photos');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))}
+async function idbPut(id,blob){const db=await idb();return new Promise((ok,no)=>{const t=db.transaction('photos','readwrite');
+  t.objectStore('photos').put(blob,id);t.oncomplete=()=>ok();t.onerror=()=>no(t.error)})}
+async function idbGet(id){const db=await idb();return new Promise((ok,no)=>{const q=db.transaction('photos').objectStore('photos').get(id);
+  q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)})}
+const photoUrls=new Map(),photoWait=new Set();
+const BLANK='data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+function refreshPhotos(){if(editing&&$('#noteVeil').classList.contains('show'))drawPhotos();if($('#listVeil').classList.contains('show'))listNotes()}
+// returns a blob: URL once the photo is read from the phone; a blank image until then or if it is not on this phone
+function src(p){
+  if(p.startsWith('data:'))return p;
+  const id=p.slice(2);
+  if(photoUrls.has(id))return photoUrls.get(id)||BLANK;
+  if(!photoWait.has(id)){photoWait.add(id);
+    idbGet(id).then(b=>{photoUrls.set(id,b?URL.createObjectURL(b):'');photoWait.delete(id);refreshPhotos()})
+      .catch(()=>{photoUrls.set(id,'');photoWait.delete(id)})}
+  return BLANK;
+}
+
+// ---------- photos ----------
+function shrink(file,max){return new Promise((ok,no)=>{
+  const u=URL.createObjectURL(file),im=new Image();
+  im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+    URL.revokeObjectURL(u);c.toBlob(b=>b?ok(b):no(),'image/jpeg',.82)};
+  im.onerror=()=>{URL.revokeObjectURL(u);no()};im.src=u})}
+const toData=b=>new Promise(ok=>{const r=new FileReader();r.onload=()=>ok(r.result);r.readAsDataURL(b)});
+async function addPhotos(files){
+  // in the cloud, photos must go to file storage: inlining them would overflow the table's saved document
+  const n=note(editing,true);$('#nPhotos').classList.add('busy');status('Загружаю фото…');
+  for(const f of files){
+    try{
+      const b=await shrink(f,1600),id=uid()+uid();await idbPut(id,b);n.p.push('i:'+id)
+    }catch(e){status('Не удалось добавить фото')}
+  }
+  $('#nPhotos').classList.remove('busy');drawPhotos();render();save();
+}
+
+// ---------- notes ----------
+const key=(r,c)=>r+':'+c;
+function note(k,make){if(!S.notes[k]&&make)S.notes[k]={t:'',p:[]};return S.notes[k]}
+function cellName(k){const [r,c]=k.split(':');const ri=S.rows.findIndex(x=>x.id===r),ci=S.cols.findIndex(x=>x.id===c);return ri<0||ci<0?null:{ref:letter(ci)+(ri+1),col:S.cols[ci].name,val:S.rows[ri].v[c]||''}}
+function openNote(k){
+  editing=k;const n=note(k)||{t:'',p:[]},nm=cellName(k);
+  $('#nTitle').textContent='Комментарий · '+nm.ref;
+  $('#nSub').textContent=(nm.col||'Столбец')+(nm.val?' — '+nm.val:'');
+  $('#nText').value=n.t;drawPhotos();show('#noteVeil');
+}
+function drawPhotos(){
+  const n=note(editing)||{p:[]};
+  $('#nPhotos').innerHTML=n.p.map((p,i)=>`<button data-ph="${i}" aria-label="Открыть фото ${i+1}"><img src="${esc(src(p))}" alt=""></button>`).join('')+`<button class="add" id="addPh">+ Фото</button>`;
+}
+function closeNote(){
+  const n=note(editing);
+  if(n&&!n.t.trim()&&!n.p.length)delete S.notes[editing];
+  editing=null;hide('#noteVeil');render();save();
+}
+$('#nText').addEventListener('input',e=>{note(editing,true).t=e.target.value;save()});
+$('#nPhotos').addEventListener('click',e=>{
+  if(e.target.closest('#addPh'))return $('#file').click();
+  const b=e.target.closest('[data-ph]');if(b){viewing=+b.dataset.ph;$('#vImg').src=src(note(editing).p[viewing]);$('#viewer').classList.add('show')}
+});
+$('#file').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length)addPhotos(f)});
+$('#nDone').onclick=closeNote;
+$('#nDel').onclick=()=>ask('Удалить комментарий?','Текст и все фото этого комментария пропадут.','Удалить',()=>{delete S.notes[editing];editing=null;hide('#noteVeil');render();save()});
+$('#vClose').onclick=()=>$('#viewer').classList.remove('show');
+$('#vDel').onclick=()=>{const n=note(editing),p=n.p[viewing];n.p.splice(viewing,1);
+  $('#viewer').classList.remove('show');drawPhotos();render();save()};
+
+// ---------- dialogs ----------
+function show(s){$(s).classList.add('show')}
+function hide(s){$(s).classList.remove('show')}
+document.querySelectorAll('.veil').forEach(v=>v.addEventListener('click',e=>{
+  if(e.target===v||e.target.closest('[data-close]')){if(v.id==='noteVeil')closeNote();else hide('#'+v.id)}}));
+function menu(title,sub,html,bind){$('#mBody').onclick=null;$('#mTitle').textContent=title;$('#mSub').textContent=sub;$('#mBody').innerHTML=html;bind&&bind();show('#menuVeil')}
+function ask(title,sub,yes,fn){
+  menu(title,sub,`<div class="row"><button class="btn" data-close>Отмена</button><span class="sp"></span><button class="btn pri" id="mYes" style="background:var(--red)">${esc(yes)}</button></div>`,
+  ()=>$('#mYes').onclick=()=>{hide('#menuVeil');fn()});
+}
+function colMenu(ci){
+  const c=S.cols[ci];
+  menu('Столбец '+letter(ci),'Название и действия',
+  `<input class="name" id="mName" value="${esc(c.name)}" aria-label="Название столбца">
+   <div class="row"><button class="btn" id="mCenter">${c.a==='center'?'Столбец не по центру':'Столбец по центру'}</button></div>
+   <div class="row"><button class="btn" id="mAsc">Сортировать А→Я</button><button class="btn" id="mDesc">Я→А</button></div>
+   <div class="row"><button class="btn" id="mNarrow">Уже</button><button class="btn" id="mWide">Шире</button><button class="btn" id="mFit">По содержимому</button></div>
+   <div class="row"><button class="btn" id="mL">← Влево</button><button class="btn" id="mR">Вправо →</button><button class="btn dang" id="mDel">Удалить</button><span class="sp"></span><button class="btn pri" id="mOk">Готово</button></div>`,()=>{
+    $('#mCenter').onclick=()=>{c.a=c.a==='center'?'':'center';if(!c.a)delete c.a;hide('#menuVeil');render();save()};
+    $('#mAsc').onclick=()=>{hide('#menuVeil');sortBy(ci,1)};$('#mDesc').onclick=()=>{hide('#menuVeil');sortBy(ci,-1)};
+    $('#mNarrow').onclick=()=>{c.w=Math.max(MINW,colW(c)-30);render();save()};
+    $('#mWide').onclick=()=>{c.w=Math.min(MAXW,colW(c)+30);render();save()};
+    $('#mFit').onclick=()=>{fitCol(ci);render();save()};
+    const done=()=>{c.name=$('#mName').value.trim()||c.name;hide('#menuVeil');render();save()};
+    $('#mOk').onclick=done;$('#mName').onkeydown=e=>{if(e.key==='Enter')done()};
+    const swap=(a,b)=>shift((x,y)=>[x===a?b:x===b?a:x,y]);
+    $('#mL').onclick=()=>{if(ci>0){swap(ci,ci-1);S.cols.splice(ci-1,0,S.cols.splice(ci,1)[0]);hide('#menuVeil');render();save()}};
+    $('#mR').onclick=()=>{if(ci<S.cols.length-1){swap(ci,ci+1);S.cols.splice(ci+1,0,S.cols.splice(ci,1)[0]);hide('#menuVeil');render();save()}};
+    $('#mDel').onclick=()=>{if(S.cols.length<2)return;ask('Удалить столбец «'+c.name+'»?','Данные и комментарии в нём пропадут.','Удалить',()=>{
+      shift((x,y)=>x===ci?null:[x>ci?x-1:x,y]);S.cols.splice(ci,1);for(const k in S.notes)if(k.endsWith(':'+c.id))delete S.notes[k];for(const r of S.rows)delete r.v[c.id];active=null;render();save()})};
+  });
+}
+function rowMenu(ri){
+  const r=S.rows[ri];
+  menu('Строка '+(ri+1),'Действия со строкой',
+  `<div class="row"><button class="btn" id="mUp">Вставить выше</button><button class="btn" id="mDown">Вставить ниже</button><button class="btn dang" id="mDel">Удалить</button><span class="sp"></span><button class="btn" data-close>Закрыть</button></div>`,()=>{
+    const ins=at=>{shift((x,y)=>[x,y>=at?y+1:y]);S.rows.splice(at,0,{id:uid(),v:{}});hide('#menuVeil');render();save()};
+    $('#mUp').onclick=()=>ins(ri);
+    $('#mDown').onclick=()=>ins(ri+1);
+    $('#mDel').onclick=()=>ask('Удалить строку '+(ri+1)+'?','Данные и комментарии в ней пропадут.','Удалить',()=>{
+      shift((x,y)=>y===ri?null:[x,y>ri?y-1:y]);S.rows.splice(ri,1);for(const k in S.notes)if(k.startsWith(r.id+':'))delete S.notes[k];active=null;render();save()});
+  });
+}
+function listNotes(){
+  const items=Object.entries(S.notes).map(([k,n])=>({k,n,c:cellName(k)})).filter(x=>x.c);
+  $('#lBody').innerHTML=items.length?items.map(({k,n,c})=>`<button class="note" data-k="${esc(k)}">${n.p[0]?`<img src="${esc(src(n.p[0]))}" alt="">`:''}<div><b>${esc(c.ref)} · ${esc(c.col)}${n.p.length?' · фото: '+n.p.length:''}</b><span>${esc(n.t||c.val||'Без текста')}</span></div></button>`).join('')
+    :'<p class="sub">Комментариев пока нет. Выбери ячейку и нажми «Комментарий».</p>';
+  show('#listVeil');
+}
+$('#lBody').addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(b){hide('#listVeil');openNote(b.dataset.k)}});
+
+// ---------- formulas ----------
+const colIdx=s=>{let n=0;for(const ch of s.toUpperCase())n=n*26+ch.charCodeAt(0)-64;return n-1};
+const parseNum=s=>{const t=String(s).replace(/[\s ]/g,'').replace(',','.');return /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t)?+t:null};
+// parseNum plus 15% and 1500 ₽ / 1500руб
+const parseNum2=s=>{let t=String(s).trim().replace(/(₽|руб\.?)$/i,'').trim(),pct=false;
+  if(t.endsWith('%')){pct=true;t=t.slice(0,-1)}const n=parseNum(t);return n===null?null:(pct?n/100:n)};
+const FN={SUM:a=>a.reduce((s,x)=>s+x,0),AVERAGE:a=>{if(!a.length)throw'#ДЕЛ/0';return FN.SUM(a)/a.length},
+  MIN:a=>a.length?Math.min(...a):0,MAX:a=>a.length?Math.max(...a):0,COUNT:a=>a.length,
+  ROUND:a=>{const k=10**(a[1]||0);return Math.round(a[0]*k)/k},ABS:a=>Math.abs(a[0]),IF:a=>a[0]?(a[1]??1):(a[2]??0),
+  TODAY:()=>new Dt(todaySerial()),NOW:()=>new Dt(nowSerial()),
+  DAY:a=>parts(a[0]).d,MONTH:a=>parts(a[0]).m,YEAR:a=>parts(a[0]).y,
+  DATE:a=>new Dt(ser(a[0],a[1],a[2])),DAYS:a=>Math.round(a[0]-a[1]),
+  WEEKDAY:a=>{const w=parts(a[0]).wd;return a[1]===2?(w||7):w+1},
+  EDATE:a=>{const p=parts(a[0]),last=parts(ser(p.y,p.m+a[1]+1,0)).d;return new Dt(ser(p.y,p.m+a[1],Math.min(p.d,last)))}};
+const AGG=new Set(['SUM','AVERAGE','MIN','MAX','COUNT']);
+const ALIAS={'СУММ':'SUM','СРЗНАЧ':'AVERAGE','МИН':'MIN','МАКС':'MAX','СЧЁТ':'COUNT','СЧЕТ':'COUNT','ОКРУГЛ':'ROUND','ЕСЛИ':'IF','AVG':'AVERAGE',
+  'СЕГОДНЯ':'TODAY','ТДАТА':'NOW','ДЕНЬ':'DAY','МЕСЯЦ':'MONTH','ГОД':'YEAR','ДАТА':'DATE','ДНИ':'DAYS','ДНЕЙ':'DAYS','ДЕНЬНЕД':'WEEKDAY','ДАТАМЕС':'EDATE'};
+// ---------- dates: stored as day numbers counted from 30.12.1899, like Numbers and Excel ----------
+class Dt{constructor(n){this.n=n}}
+const EPOCH=Date.UTC(1899,11,30);
+const ser=(y,m,d)=>(Date.UTC(y,m-1,d)-EPOCH)/864e5;
+const parts=n=>{const t=new Date(EPOCH+Math.round(n*1440)*6e4);return{y:t.getUTCFullYear(),m:t.getUTCMonth()+1,d:t.getUTCDate(),h:t.getUTCHours(),mi:t.getUTCMinutes(),wd:t.getUTCDay()}};
+const p2=x=>String(x).padStart(2,'0');
+const fmtDate=n=>{const p=parts(n);return p2(p.d)+'.'+p2(p.m)+'.'+p.y+(p.h||p.mi?' '+p2(p.h)+':'+p2(p.mi):'')};
+const WD=['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+const MON=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const longDate=n=>{const p=parts(n);return WD[p.wd]+', '+p.d+' '+MON[p.m-1]+' '+p.y+(p.h||p.mi?', '+p2(p.h)+':'+p2(p.mi):'')};
+const todaySerial=()=>{const t=new Date();return ser(t.getFullYear(),t.getMonth()+1,t.getDate())};
+const nowSerial=()=>{const t=new Date();return todaySerial()+(t.getHours()*60+t.getMinutes())/1440};
+// accepts 24.11.2026, 24.11.26, 24.11, 24/11/2026, 2026-11-24, optionally followed by 14:30
+function parseDate(s){
+  s=String(s).trim();let m,y,mo,d,h=0,mi=0;
+  const tm=/\s+(\d{1,2}):(\d{2})$/.exec(s);if(tm){h=+tm[1];mi=+tm[2];s=s.slice(0,tm.index);if(h>23||mi>59)return null}
+  if(m=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)){y=+m[1];mo=+m[2];d=+m[3]}
+  else if(m=/^(\d{1,2})[.\/](\d{1,2})(?:[.\/](\d{2}|\d{4}))?$/.exec(s)){d=+m[1];mo=+m[2];y=m[3]?(m[3].length===2?2000+ +m[3]:+m[3]):new Date().getFullYear()}
+  else return null;
+  if(mo<1||mo>12||d<1)return null;
+  const n=ser(y,mo,d);if(parts(n).d!==d)return null;
+  return n+(h*60+mi)/1440;
+}
+const TOK=/\s*(\d+(?:\.\d+)?|\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?|[A-Za-zА-Яа-яЁё]+|<=|>=|<>|[-+*\/^(),;=<>%])/y;
+let memo=new Map(),stack=new Set();
+function raw(ci,ri){const r=S.rows[ri],c=S.cols[ci];return r&&c?(r.v[c.id]||''):''}
+// value of a cell: number, string, '' or an error string starting with #
+function val(ci,ri){
+  const k=ci+','+ri;if(memo.has(k))return memo.get(k);
+  const s=raw(ci,ri);let v;
+  if(s[0]==='='){
+    if(stack.has(k))return '#ЦИКЛ';
+    stack.add(k);
+    try{v=calc(s.slice(1))}catch(e){v=typeof e==='string'?e:'#ОШИБКА'}
+    stack.delete(k);
+  }else{const d=parseDate(s);if(d!==null)v=new Dt(d);else{const n=parseNum2(s);v=n===null?s:n}}
+  memo.set(k,v);return v;
+}
+function calc(src){
+  if(src.includes('#REF'))throw'#ССЫЛКА';
+  const t=[];TOK.lastIndex=0;let m;
+  while(TOK.lastIndex<src.length){const i=TOK.lastIndex;if(!src.slice(i).trim())break;if(!(m=TOK.exec(src)))throw'#ОШИБКА';t.push(m[1])}
+  let p=0;const peek=()=>t[p],next=()=>t[p++];
+  const cell=s=>{const m=/^\$?([A-Za-z]+)\$?(\d+)$/.exec(s);return[colIdx(m[1]),+m[2]-1]};
+  const num=v=>{if(v instanceof Dt)return v.n;if(Array.isArray(v))throw'#ОШИБКА';if(typeof v==='string'&&v[0]==='#')throw v;if(v===''||v===true||v===false)return +v||0;if(typeof v!=='number')throw'#ЗНАЧ';return v};
+  const range=s=>{const[a,b]=s.split(':').map(cell),out=[];
+    for(let c=Math.min(a[0],b[0]);c<=Math.max(a[0],b[0]);c++)for(let r=Math.min(a[1],b[1]);r<=Math.max(a[1],b[1]);r++){const v=val(c,r);if(typeof v==='string'&&v[0]==='#')throw v;if(typeof v==='number'||v instanceof Dt)out.push(v)}
+    return out};
+  function prim(){
+    const x=next();if(x===undefined)throw'#ОШИБКА';
+    if(x==='('){const v=cmp();if(next()!==')')throw'#ОШИБКА';return v}
+    if(/^\d/.test(x))return +x;
+    if(x.includes(':'))return range(x);
+    if(/^\$?[A-Za-z]{1,3}\$?\d+$/.test(x)){const[c,r]=cell(x);return val(c,r)}
+    if(/^[A-Za-zА-Яа-яЁё]+$/.test(x)&&peek()==='('){
+      const name=ALIAS[x.toUpperCase()]||x.toUpperCase(),f=FN[name];if(!f)throw'#ИМЯ';
+      next();const args=[];
+      let anyDate=false;
+      if(peek()!==')')do{const v=cmp();
+        if(AGG.has(name)){for(const x of Array.isArray(v)?v:[v]){if(x instanceof Dt){anyDate=true;args.push(x.n)}else if(typeof x==='number')args.push(x);else if(typeof x==='string'&&x[0]==='#')throw x}}
+        else if(Array.isArray(v))args.push(...v.map(num));
+        else args.push(typeof v==='boolean'?v:num(v));
+      }while((peek()===';'||peek()===',')&&next());
+      if(next()!==')')throw'#ОШИБКА';
+      const res=f(args);return anyDate&&(name==='MIN'||name==='MAX')?new Dt(res):res;
+    }
+    throw'#ОШИБКА';
+  }
+  function unary(){if(peek()==='-'){next();return -num(unary())}if(peek()==='+'){next();return num(unary())}let v=prim();if(peek()==='%'){next();v=num(v)/100}return v}
+  function pow(){let v=unary();while(peek()==='^'){next();v=num(v)**num(unary())}return v}
+  function mul(){let v=pow();while(peek()==='*'||peek()==='/'){const o=next(),b=num(pow());if(o==='/'&&b===0)throw'#ДЕЛ/0';v=o==='*'?num(v)*b:num(v)/b}return v}
+  // date + days = date, date - days = date, date - date = days
+  function add(){let v=mul();while(peek()==='+'||peek()==='-'){const o=next(),b=mul(),ad=v instanceof Dt,bd=b instanceof Dt,x=num(v),y=num(b);
+    v=o==='+'?(ad!==bd?new Dt(x+y):x+y):(ad&&!bd?new Dt(x-y):x-y)}return v}
+  function cmp(){let v=add();const o=peek();if(['=','<','>','<=','>=','<>'].includes(o)){next();const a=num(v),b=num(add());v=o==='='?a===b:o==='<'?a<b:o==='>'?a>b:o==='<='?a<=b:o==='>='?a>=b:a!==b}return v}
+  const v=cmp();if(p<t.length)throw'#ОШИБКА';
+  if(Array.isArray(v))return FN.SUM(v.map(num));
+  return typeof v==='boolean'?(v?'ИСТИНА':'ЛОЖЬ'):v;
+}
+const fmt=v=>v instanceof Dt?(isFinite(v.n)?fmtDate(v.n):'#ЧИСЛО'):typeof v==='number'?(isFinite(v)?v.toLocaleString('ru-RU',{maximumFractionDigits:10}):'#ЧИСЛО'):String(v);
+function recalc(){memo=new Map();stack=new Set()}
+// column totals skip cells that already total a range (=СУММ(B1:B5)), so subtotals are not counted twice
+function colStats(ci){const a=[];for(let r=0;r<S.rows.length;r++){const s=raw(ci,r);if(s[0]==='='&&s.includes(':'))continue;const v=val(ci,r);if(typeof v==='number'&&isFinite(v))a.push(v)}
+  return a.length?{sum:FN.SUM(a),avg:FN.SUM(a)/a.length,min:Math.min(...a),max:Math.max(...a),n:a.length}:null}
+// rewrite cell references in every formula after rows/columns move
+function shift(map){
+  for(const r of S.rows)for(const k in r.v){const s=r.v[k];if(typeof s!=='string'||s[0]!=='=')continue;
+    r.v[k]=s.replace(/(?<![A-Za-zА-Яа-яЁё])(\$?)([A-Za-z]{1,3})(\$?)(\d+)/g,(m,d1,c,d2,n)=>{const t=map(colIdx(c),+n-1);return t?d1+letter(t[0])+d2+(t[1]+1):'#REF'})}
+}
+// ---------- cell formatting: row.f[colId] = {b,i,c,bg,a,n} ----------
+function fmtOf(ci,ri){const r=S.rows[ri],c=S.cols[ci];return(r&&c&&r.f&&r.f[c.id])||{}}
+function setFmt(ci,ri,patch){const r=S.rows[ri],c=S.cols[ci];if(!r||!c)return;r.f=r.f||{};const f={...(r.f[c.id]||{}),...patch};
+  for(const k in f)if(f[k]===''||f[k]==null||f[k]===false)delete f[k];if(Object.keys(f).length)r.f[c.id]=f;else delete r.f[c.id]}
+function fmtV(v,f){
+  if(typeof v!=='number'||!isFinite(v)||!f.n)return fmt(v);
+  const o=(min,max)=>({minimumFractionDigits:min,maximumFractionDigits:max});
+  if(f.n==='rub')return v.toLocaleString('ru-RU',o(2,2))+' ₽';
+  if(f.n==='pct')return (v*100).toLocaleString('ru-RU',o(0,2))+' %';
+  if(f.n==='num2')return v.toLocaleString('ru-RU',o(2,2));
+  if(f.n==='int')return Math.round(v).toLocaleString('ru-RU');
+  return fmt(v);
+}
+function styleCell(inp,f){
+  inp.style.fontWeight=f.b?'700':'';inp.style.fontStyle=f.i?'italic':'';
+  inp.style.color=f.c||(f.bg?'#17202a':'');inp.style.textAlign=f.a||inp.dataset.ca||'';
+  inp.parentNode.style.background=f.bg||'';
+}
+// shrink the font (down to 11px) so a value fits a narrow column instead of being cut off
+const mcx=document.createElement('canvas').getContext('2d');
+function fitText(inp,f){let size=16;const w=parseFloat(inp.style.width)-20;
+  if(inp.value&&w>0)while(size>11){mcx.font=(f.b?'700 ':'')+size+'px Inter, system-ui, sans-serif';if(mcx.measureText(inp.value).width<=w)break;size--}
+  inp.style.fontSize=size<16?size+'px':''}
+function paintCells(){
+  recalc();
+  grid.querySelectorAll('tbody input').forEach(inp=>{
+    const[ci,ri]=pos(inp.dataset.k),f=fmtOf(ci,ri);inp.dataset.ca=(S.cols[ci]&&S.cols[ci].a)||'';styleCell(inp,f);
+    if(inp===document.activeElement)return;
+    const s=raw(ci,ri),v=val(ci,ri);
+    const isNum=typeof v==='number'||v instanceof Dt;
+    inp.value=s[0]==='='||isNum?fmtV(v,f):s;
+    inp.className=isNum?'num':(typeof v==='string'&&v[0]==='#')?'err':'';
+    fitText(inp,f);
+  });
+  paintSel();
+  const tf=grid.querySelector('tfoot');
+  if(tf)tf.innerHTML=`<tr><td class="rn">Σ</td>${S.cols.map((c,i)=>{const st=colStats(i);return `<td><div class="ft" style="width:${colW(c)}px">${st?esc(fmt(Math.round(st.sum*100)/100)):''}</div></td>`}).join('')}</tr>`;
+  bar();
+}
+function pos(k){const[r,c]=k.split(':');return[S.cols.findIndex(x=>x.id===c),S.rows.findIndex(x=>x.id===r)]}
+
+// ---------- grid ----------
+function render(){
+  $('#title').value=S.title||'';renderTabs();
+  const head=`<thead><tr><th class="rn"></th>${S.cols.map((c,i)=>`<th><button class="hb" data-col="${i}" title="${esc(c.name)}" style="width:${colW(c)}px;text-align:${c.a||'left'}"><small>${letter(i)}</small>${esc(c.name)}</button><span class="rz" data-rz="${i}" aria-hidden="true"></span></th>`).join('')}</tr></thead>`;
+  const body=S.rows.map((r,ri)=>`<tr><td class="rn"><button class="hb" data-row="${ri}" aria-label="Строка ${ri+1}">${ri+1}</button></td>${S.cols.map(c=>{
+    const k=key(r.id,c.id),n=S.notes[k],on=active===k?' class="on"':'';
+    return `<td${on}><input data-k="${k}" style="width:${colW(c)}px" value="${esc(r.v[c.id]||'')}" aria-label="${esc(c.name)}, строка ${ri+1}">${n?`<button class="flag" data-note="${k}" aria-label="Открыть комментарий">${n.p.length?`<i>${n.p.length}</i>`:''}</button>`:''}</td>`}).join('')}</tr>`).join('');
+  $('#grid').innerHTML=head+'<tbody>'+body+'</tbody><tfoot></tfoot>';
+  paintCells();
+}
+// ---------- range selection ----------
+let sel=null,rangeMode=false;
+function selCells(){if(!sel)return active?[pos(active)]:[];const out=[];
+  for(let r=sel.r1;r<=sel.r2;r++)for(let c=sel.c1;c<=sel.c2;c++)if(S.rows[r]&&S.cols[c])out.push([c,r]);return out}
+function paintSel(){grid.querySelectorAll('td.rsel').forEach(t=>t.classList.remove('rsel'));
+  if(sel)for(const[c,r]of selCells()){const i=cellInput(c,r);i&&i.parentNode.classList.add('rsel')}}
+function statsOf(cells){const a=[];for(const[c,r]of cells){const v=val(c,r);if(typeof v==='number'&&isFinite(v))a.push(v)}
+  return a.length?{sum:FN.SUM(a),avg:FN.SUM(a)/a.length,min:Math.min(...a),max:Math.max(...a),n:a.length}:null}
+const statLine=(label,st)=>st?`${esc(label)}: Сумма <b>${esc(fmt(Math.round(st.sum*100)/100))}</b> · Среднее <b>${esc(fmt(Math.round(st.avg*100)/100))}</b> · Мин <b>${esc(fmt(st.min))}</b> · Макс <b>${esc(fmt(st.max))}</b> · Кол-во <b>${st.n}</b>`:'';
+function bar(){
+  const c=active&&cellName(active);
+  if(!c){$('#cellbar').classList.remove('show');fh.remove();return}
+  $('#cbRange').textContent=sel||rangeMode?'Снять выделение':'Выделить диапазон';
+  $('#cbClear').hidden=!sel;
+  {const cs=selCells(),on=cs.length>0&&cs.every(([c,r])=>(fmtOf(c,r).a||(S.cols[c]&&S.cols[c].a))==='center');$('#cbCenter').setAttribute('aria-pressed',on);$('#cbCenter').textContent=on?'Не по центру':'По центру'}
+  if(sel){
+    const ref=letter(sel.c1)+(sel.r1+1)+':'+letter(sel.c2)+(sel.r2+1),cells=selCells();
+    $('#cbRef').textContent=ref;$('#cbInfo').textContent='Выделено ячеек: '+cells.length;
+    $('#cbStats').innerHTML=statLine('Диапазон',statsOf(cells))||'В диапазоне нет чисел';
+    $('#cellbar').classList.add('show');fh.remove();return;
+  }
+  if(rangeMode){$('#cbRef').textContent=c.ref+':…';$('#cbInfo').textContent='Нажми последнюю ячейку диапазона';$('#cellbar').classList.add('show');return}
+  const n=S.notes[active],[ci,ri]=pos(active);
+  $('#cbRef').textContent=c.ref;
+  const s=raw(ci,ri);
+  const cv=val(ci,ri);
+  $('#cbInfo').textContent=s[0]==='='?s+' → '+fmt(cv)+(cv instanceof Dt?' ('+longDate(cv.n)+')':''):cv instanceof Dt?longDate(cv.n):n?(n.p.length?'Фото: '+n.p.length+(n.t?' · '+n.t:''):n.t):c.col;
+  const st=colStats(ci);
+  $('#cbStats').innerHTML=statLine('Столбец «'+S.cols[ci].name+'»',st);
+  $('#cbOpen').textContent=n?'Открыть комментарий':'Комментарий';
+  $('#cellbar').classList.add('show');
+  placeHandle();
+}
+const grid=$('#grid');
+grid.addEventListener('focusin',e=>{const k=e.target.dataset&&e.target.dataset.k;if(!k)return;
+  if(rangeMode&&active&&k!==active){ // second tap closes the range
+    const[a,b]=pos(active),[c,d]=pos(k);sel={c1:Math.min(a,c),c2:Math.max(a,c),r1:Math.min(b,d),r2:Math.max(b,d)};
+    rangeMode=false;e.target.blur();paintSel();bar();return}
+  rangeMode=false;sel=null;paintSel();
+  grid.querySelectorAll('td.on').forEach(t=>t.classList.remove('on'));e.target.parentNode.classList.add('on');active=k;
+  const[ci,ri]=pos(k),s=raw(ci,ri);e.target.value=s;e.target.style.fontSize='';e.target.className=s[0]==='='?'fx':'';bar()});
+grid.addEventListener('focusout',e=>{if(e.target.dataset&&e.target.dataset.k)setTimeout(paintCells,0)});
+grid.addEventListener('input',e=>{const k=e.target.dataset.k;if(!k)return;const [r,c]=k.split(':');const row=S.rows.find(x=>x.id===r);
+  if(row){const v=e.target.value;if(v)row.v[c]=v;else delete row.v[c];e.target.className=v[0]==='='?'fx':'';
+    // typing 15% or 1500 ₽ switches the cell to that number format, as Numbers does
+    const[ci,ri]=pos(k);if(parseNum2(v)!==null){if(/%\s*$/.test(v))setFmt(ci,ri,{n:'pct'});else if(/(₽|руб\.?)\s*$/i.test(v))setFmt(ci,ri,{n:'rub'})}
+    paintCells();save()}});
+$('#cbSum').onclick=()=>{if(!active)return;const[ci,ri]=pos(active),c=S.cols[ci],r=S.rows[ri];
+  let top=ri-1;while(top>=0&&raw(ci,top)==='')top--;
+  let start=top;while(start>0&&raw(ci,start-1)!=='')start--;
+  const f=top<0?'=СУММ()':'=СУММ('+letter(ci)+(start+1)+':'+letter(ci)+(top+1)+')';
+  r.v[c.id]=f;const inp=grid.querySelector(`input[data-k="${active}"]`);if(inp){inp.value=f;inp.className='fx'}paintCells();save()};
+grid.addEventListener('click',e=>{
+  const f=e.target.closest('[data-note]');if(f){active=f.dataset.note;openNote(active);return}
+  const h=e.target.closest('[data-col]');if(h)return colMenu(+h.dataset.col);
+  const r=e.target.closest('[data-row]');if(r)return rowMenu(+r.dataset.row);
+});
+grid.addEventListener('keydown',e=>{if(e.key!=='Enter'||!e.target.dataset.k)return;e.preventDefault();
+  const td=e.target.closest('td'),ci=td.cellIndex,tr=td.parentNode.nextElementSibling;
+  if(tr)return tr.cells[ci].querySelector('input').focus();
+  // Enter on the last row adds a new row, as in Numbers
+  S.rows.push({id:uid(),v:{}});render();save();grid.querySelector('tbody tr:last-child').cells[ci].querySelector('input').focus()});
+$('#cbOpen').onclick=()=>active&&openNote(active);
+$('#title').addEventListener('input',e=>{S.title=e.target.value;renderTabs();save()});
+$('#addRow').onclick=()=>{S.rows.push({id:uid(),v:{}});render();save();const ins=grid.querySelectorAll('tbody tr:last-child input');ins[0]&&ins[0].focus()};
+$('#addRows').onclick=()=>{for(let i=0;i<10;i++)S.rows.push({id:uid(),v:{}});render();save();$('.wrap').scrollTop=1e6};
+
+// ---------- tables ----------
+function renderTabs(){
+  $('#tabs').innerHTML=D.tables.map(t=>`<button class="tab" data-t="${esc(t.id)}" aria-current="${t.id===S.id}">${esc(t.title||'Без названия')}</button>`).join('')+'<button class="tab add" id="addTable">+ Таблица</button>';
+  const cur=$('#tabs [aria-current=true]');cur&&cur.scrollIntoView({block:'nearest',inline:'nearest'});
+}
+function openTable(id){D.cur=id;S=D.tables.find(t=>t.id===id);active=null;$('.wrap').scrollTop=0;render();save()}
+function tableMenu(){
+  const i=D.tables.indexOf(S);
+  menu('Таблица «'+(S.title||'Без названия')+'»','Название и действия',
+  `<input class="name" id="mName" value="${esc(S.title)}" aria-label="Название таблицы">
+   <div class="row"><button class="btn" id="mL">← Влево</button><button class="btn" id="mR">Вправо →</button><button class="btn" id="mDup">Копия</button><button class="btn dang" id="mDel">Удалить</button><span class="sp"></span><button class="btn pri" id="mOk">Готово</button></div>`,()=>{
+    const done=()=>{S.title=$('#mName').value.trim()||S.title;hide('#menuVeil');render();save()};
+    $('#mOk').onclick=done;$('#mName').onkeydown=e=>{if(e.key==='Enter')done()};
+    const mv=d=>{const j=i+d;if(j<0||j>=D.tables.length)return;D.tables.splice(j,0,D.tables.splice(i,1)[0]);hide('#menuVeil');render();save()};
+    $('#mL').onclick=()=>mv(-1);$('#mR').onclick=()=>mv(1);
+    $('#mDup').onclick=()=>{const c=JSON.parse(JSON.stringify(S));c.id=uid();c.title=(S.title||'Таблица')+' (копия)';
+      const keep={};for(const k in c.notes)keep[k]={t:c.notes[k].t,p:[]};c.notes=keep; // photos stay with the original
+      D.tables.splice(i+1,0,c);hide('#menuVeil');openTable(c.id)};
+    $('#mDel').onclick=()=>{if(D.tables.length<2){$('#mSub').textContent='Это единственная таблица, её нельзя удалить.';return}
+      ask('Удалить таблицу «'+(S.title||'')+'»?','Все данные, комментарии и фото этой таблицы пропадут.','Удалить',()=>{
+        D.tables.splice(i,1);openTable(D.tables[Math.max(0,i-1)].id)})};
+  });
+}
+$('#tabs').addEventListener('click',e=>{
+  if(e.target.closest('#addTable')){const t=blank('Таблица '+(D.tables.length+1));D.tables.push(t);openTable(t.id);return tableMenu()}
+  const b=e.target.closest('[data-t]');if(!b)return;
+  if(b.dataset.t===S.id)tableMenu();else openTable(b.dataset.t);
+});
+$('#addCol').onclick=()=>{S.cols.push({id:uid(),name:'Столбец '+letter(S.cols.length)});render();save();colMenu(S.cols.length-1)};
+$('#showNotes').onclick=listNotes;
+
+// ---------- helpers for cells ----------
+function cellInput(ci,ri){const r=S.rows[ri],c=S.cols[ci];return r&&c?grid.querySelector(`input[data-k="${r.id}:${c.id}"]`):null}
+function setRaw(ci,ri,s){const r=S.rows[ri],c=S.cols[ci];if(!r||!c)return;if(s)r.v[c.id]=s;else delete r.v[c.id]}
+
+// ---------- date picker ----------
+let dateKey=null;
+$('#cbDate').onclick=()=>{
+  if(!active)return;dateKey=active;const[ci,ri]=pos(active),v=val(ci,ri);
+  const n=v instanceof Dt?v.n:todaySerial(),p=parts(n);
+  $('#dIn').value=p.y+'-'+p2(p.m)+'-'+p2(p.d);
+  $('#tIn').value=v instanceof Dt&&(p.h||p.mi)?p2(p.h)+':'+p2(p.mi):'';
+  $('#dTitle').textContent='Дата · '+cellName(active).ref;show('#dateVeil');
+};
+function putDate(n){const[ci,ri]=pos(dateKey);setRaw(ci,ri,n===null?'':fmtDate(n));hide('#dateVeil');
+  const inp=cellInput(ci,ri);if(inp&&inp===document.activeElement)inp.blur();paintCells();save()}
+$('#dOk').onclick=()=>{const d=$('#dIn').value;if(!d)return putDate(null);const[y,m,dd]=d.split('-').map(Number);let n=ser(y,m,dd);
+  const t=$('#tIn').value;if(t){const[h,mi]=t.split(':').map(Number);n+=(h*60+mi)/1440}putDate(n)};
+$('#dToday').onclick=()=>putDate(todaySerial());
+$('#dClear').onclick=()=>putDate(null);
+
+// ---------- autofill: drag the yellow dot of the selected cell ----------
+const fh=document.createElement('span');fh.className='fh';fh.title='Потяни, чтобы заполнить';
+function placeHandle(){const[ci,ri]=active?pos(active):[-1,-1],inp=ci>=0&&ri>=0&&cellInput(ci,ri);if(inp)inp.parentNode.appendChild(fh);else fh.remove()}
+const shiftFormula=(s,dc,dr)=>s.replace(/(?<![A-Za-zА-Яа-яЁё])(\$?)([A-Za-z]{1,3})(\$?)(\d+)/g,(m,d1,c,d2,n)=>{
+  const ci=colIdx(c)+(d1?0:dc),ri=+n-1+(d2?0:dr);return ci<0||ri<0?'#REF':d1+letter(ci)+d2+(ri+1)});
+const numStr=x=>String(Math.round(x*1e10)/1e10).replace('.',',');
+function cellsBetween(from,to){const out=[];
+  if(to[0]===from[0]){const d=Math.sign(to[1]-from[1]);for(let r=from[1]+d;d&&r!==to[1]+d;r+=d)out.push([from[0],r])}
+  else{const d=Math.sign(to[0]-from[0]);for(let c=from[0]+d;d&&c!==to[0]+d;c+=d)out.push([c,from[1]])}
+  return out}
+function clearSel(){grid.querySelectorAll('td.fsel').forEach(t=>t.classList.remove('fsel'))}
+let drag=null,lastFill=null,toastT=0;
+fh.addEventListener('pointerdown',e=>{if(!active)return;e.preventDefault();e.stopPropagation();try{fh.setPointerCapture(e.pointerId)}catch(_){}
+  const[ci,ri]=pos(active);drag={from:[ci,ri],to:null}});
+fh.addEventListener('pointermove',e=>{
+  if(!drag)return;e.preventDefault();
+  const wr=$('.wrap'),b=wr.getBoundingClientRect();
+  if(e.clientY>b.bottom-36)wr.scrollTop+=14;else if(e.clientY<b.top+60)wr.scrollTop-=14;
+  if(e.clientX>b.right-30)wr.scrollLeft+=14;else if(e.clientX<b.left+50)wr.scrollLeft-=14;
+  const el=document.elementFromPoint(e.clientX,e.clientY),inp=el&&el.closest('td')&&el.closest('td').querySelector('input[data-k]');
+  if(!inp)return;
+  const[c,r]=pos(inp.dataset.k),[fc,fr]=drag.from;
+  const to=Math.abs(r-fr)>=Math.abs(c-fc)?[fc,r]:[c,fr];
+  clearSel();drag.to=to[0]===fc&&to[1]===fr?null:to;
+  if(drag.to)cellsBetween(drag.from,drag.to).forEach(([c,r])=>{const i=cellInput(c,r);i&&i.parentNode.classList.add('fsel')});
+});
+const endDrag=()=>{if(!drag)return;const d=drag;drag=null;clearSel();if(d.to)fill(d.from,d.to,'auto')};
+fh.addEventListener('pointerup',endDrag);fh.addEventListener('pointercancel',()=>{drag=null;clearSel()});
+// mode: auto (dates and "Item 1" continue, numbers copy), copy, series
+function fill(from,to,mode){
+  const cells=cellsBetween(from,to),[fc,fr]=from,s=raw(fc,fr);recalc();const v=val(fc,fr);
+  const before=cells.map(([c,r])=>[c,r,raw(c,r)]);
+  const vert=to[0]===fc,dir=vert?Math.sign(to[1]-fr):Math.sign(to[0]-fc);
+  const pc=vert?fc:fc-dir,pr=vert?fr-dir:fr;
+  const prevOk=pc>=0&&pr>=0&&pc<S.cols.length&&pr<S.rows.length&&raw(pc,pr)[0]!=='=';
+  const pv=prevOk?val(pc,pr):null;
+  let step=1,kind='copy';
+  if(s[0]==='=')kind='formula';
+  else if(v instanceof Dt){kind=mode==='copy'?'copy':'series';if(pv instanceof Dt&&pv.n!==v.n)step=(v.n-pv.n)*dir}
+  else if(typeof v==='number'){kind=mode==='series'?'series':'copy';if(typeof pv==='number'&&pv!==v)step=(v-pv)*dir}
+  else if(/\d+$/.test(s))kind=mode==='copy'?'copy':'series';
+  cells.forEach(([c,r],i)=>{const k=(i+1)*dir;let out=s;
+    if(kind==='formula')out=shiftFormula(s,c-fc,r-fr);
+    else if(kind==='series'){
+      if(v instanceof Dt)out=fmtDate(v.n+step*k);
+      else if(typeof v==='number')out=numStr(v+step*k);
+      else{const m=/^(.*?)(\d+)$/.exec(s);out=m[1]+Math.max(0,+m[2]+k)}}
+    setRaw(c,r,out)});
+  lastFill={from,to,before,kind,canSeries:kind!=='formula'&&(typeof v==='number'||v instanceof Dt||/\d+$/.test(s))};
+  paintCells();save();
+  $('#tMsg').textContent='Заполнено: '+cells.length;
+  $('#tAlt').hidden=!lastFill.canSeries;$('#tAlt').textContent=kind==='series'?'Копировать':'Ряд';
+  $('#toast').classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>$('#toast').classList.remove('show'),7000);
+}
+function undoFill(){if(!lastFill)return;for(const[c,r,s]of lastFill.before)setRaw(c,r,s);paintCells();save()}
+$('#tUndo').onclick=()=>{undoFill();lastFill=null;$('#toast').classList.remove('show')};
+$('#tAlt').onclick=()=>{if(!lastFill)return;const f=lastFill;undoFill();fill(f.from,f.to,f.kind==='series'?'copy':'series')};
+
+// ---------- column width: drag the right edge of a header ----------
+const MINW=60,MAXW=600;
+function colW(c){return c.w||140}
+function setColW(ci,w){const c=S.cols[ci];c.w=Math.round(Math.min(MAXW,Math.max(MINW,w)));
+  const th=grid.querySelectorAll('thead th')[ci+1];th&&(th.querySelector('.hb').style.width=c.w+'px');
+  grid.querySelectorAll('tbody tr, tfoot tr').forEach(tr=>{const i=tr.cells[ci+1]&&tr.cells[ci+1].querySelector('input,.ft');if(i)i.style.width=c.w+'px'})}
+function fitCol(ci){const cx=document.createElement('canvas').getContext('2d');cx.font='16px Inter, system-ui, sans-serif';
+  let w=cx.measureText(S.cols[ci].name).width;
+  S.rows.forEach((r,ri)=>{const v=val(ci,ri),s=raw(ci,ri);w=Math.max(w,cx.measureText(s[0]==='='||typeof v==='number'||v instanceof Dt?fmt(v):s).width)});
+  S.cols[ci].w=Math.round(Math.min(MAXW,Math.max(MINW,w+34)))}
+let rz=null;
+grid.addEventListener('pointerdown',e=>{const h=e.target.closest('.rz');if(!h)return;e.preventDefault();
+  const ci=+h.dataset.rz;try{h.setPointerCapture(e.pointerId)}catch(_){}
+  rz={ci,x:e.clientX,w:colW(S.cols[ci]),h,moved:false,t:Date.now()};h.parentNode.classList.add('rzing')});
+grid.addEventListener('pointermove',e=>{if(!rz)return;e.preventDefault();const dx=e.clientX-rz.x;if(Math.abs(dx)>2)rz.moved=true;setColW(rz.ci,rz.w+dx)});
+const endRz=()=>{if(!rz)return;const r=rz;rz=null;r.h.parentNode.classList.remove('rzing');
+  if(!r.moved){ // double tap on the edge fits the column to its contents
+    if(Date.now()-(endRz.last||0)<400){fitCol(r.ci);render()}endRz.last=Date.now()}
+  save()};
+grid.addEventListener('pointerup',endRz);grid.addEventListener('pointercancel',endRz);
+
+// ---------- range buttons ----------
+$('#cbRange').onclick=()=>{
+  if(sel||rangeMode){sel=null;rangeMode=false;paintSel();bar();return}
+  if(!active)return;rangeMode=true;const i=cellInput(...pos(active));i&&i.blur();bar();
+};
+$('#cbClear').onclick=()=>{if(!sel)return;const cells=selCells();
+  ask('Очистить '+cells.length+' ячеек?','Значения удалятся, комментарии и оформление останутся. Можно отменить кнопкой ↶.','Очистить',()=>{
+    for(const[c,r]of cells)setRaw(c,r,'');paintCells();save()})};
+
+// ---------- format sheet ----------
+const TXT=['','#d32f2f','#ef6c00','#2e7d32','#1f6feb','#6a1b9a'];
+const BG=['','#fff2b3','#d7f5dd','#dbe9ff','#ffd9d6','#ececec'];
+const NF=[['','Авто'],['int','Целое'],['num2','0,00'],['rub','₽ Рубли'],['pct','% Процент']];
+const AL=[['','Авто'],['left','Слева'],['center','По центру'],['right','Справа']];
+$('#cbFmt').onclick=()=>{
+  const cells=selCells();if(!cells.length)return;
+  const f0=fmtOf(...cells[0]);
+  const pressed=(a,b)=>`aria-pressed="${(a||'')===(b||'')}"`;
+  menu('Формат',cells.length>1?'Для '+cells.length+' ячеек':'Ячейка '+cellName(active).ref,
+  `<div class="seg"><button class="btn" data-fk="b" ${pressed(f0.b?1:'',1)} style="font-weight:700">Жирный</button><button class="btn" data-fk="i" ${pressed(f0.i?1:'',1)} style="font-style:italic">Курсив</button></div>
+   <div class="fl">Цвет текста</div><div class="sw">${TXT.map(c=>`<button data-c="${c}" ${pressed(f0.c,c)} aria-label="${c?'Цвет '+c:'Обычный'}" style="background:${c||'var(--ink)'}"></button>`).join('')}</div>
+   <div class="fl">Заливка</div><div class="sw">${BG.map(c=>`<button data-bg="${c}" ${pressed(f0.bg,c)} aria-label="${c?'Заливка '+c:'Без заливки'}" style="background:${c||'var(--bg)'}"></button>`).join('')}</div>
+   <div class="fl">Числа</div><div class="seg">${NF.map(([k,t])=>`<button class="btn" data-n="${k}" ${pressed(f0.n,k)}>${t}</button>`).join('')}</div>
+   <div class="fl">Выравнивание</div><div class="seg">${AL.map(([k,t])=>`<button class="btn" data-a="${k}" ${pressed(f0.a,k)}>${t}</button>`).join('')}</div>
+   <div class="row"><button class="btn dang" id="fReset">Сбросить формат</button><span class="sp"></span><button class="btn pri" data-close>Готово</button></div>`,()=>{
+    const apply=patch=>{for(const[c,r]of cells)setFmt(c,r,patch);paintCells();save()};
+    $('#mBody').onclick=e=>{const b=e.target.closest('button');if(!b||b.hasAttribute('data-close'))return;
+      if(b.id==='fReset'){for(const[c,r]of cells){const row=S.rows[r];if(row.f)delete row.f[S.cols[c].id]}paintCells();save();hide('#menuVeil');return}
+      let patch=null,group=null;
+      if(b.dataset.fk){const on=b.getAttribute('aria-pressed')!=='true';patch={[b.dataset.fk]:on?1:''};b.setAttribute('aria-pressed',on)}
+      else if('c' in b.dataset){patch={c:b.dataset.c};group='[data-c]'}
+      else if('bg' in b.dataset){patch={bg:b.dataset.bg};group='[data-bg]'}
+      else if('n' in b.dataset){patch={n:b.dataset.n};group='[data-n]'}
+      else if('a' in b.dataset){patch={a:b.dataset.a};group='[data-a]'}
+      if(group)$('#mBody').querySelectorAll(group).forEach(x=>x.setAttribute('aria-pressed',x===b));
+      if(patch)apply(patch);
+    };
+  });
+};
+
+// ---------- sort rows by a column ----------
+// single references follow their rows; ranges such as B1:B8 stay as they are
+function remapSingles(map){
+  for(const r of S.rows)for(const k in r.v){const s=r.v[k];if(typeof s!=='string'||s[0]!=='=')continue;
+    r.v[k]=s.replace(/(?<![A-Za-zА-Яа-яЁё:$])(\$?[A-Za-z]{1,3}\$?\d+)(:\$?[A-Za-z]{1,3}\$?\d+)?/g,(m,a,b)=>{
+      if(b)return m;const x=/^(\$?)([A-Za-z]+)(\$?)(\d+)$/.exec(a),t=map(colIdx(x[2]),+x[4]-1);return x[1]+letter(t[0])+x[3]+(t[1]+1)})}
+}
+function sortBy(ci,dir){
+  recalc();const filled=[],empty=[];
+  S.rows.forEach((r,i)=>(Object.keys(r.v).length?filled:empty).push(i));
+  const key=i=>{const v=val(ci,i);return v instanceof Dt?v.n:v};
+  filled.sort((a,b)=>{const x=key(a),y=key(b),xe=x===''||x==null,ye=y===''||y==null;
+    if(xe!==ye)return xe?1:-1;if(xe)return a-b;
+    if(typeof x==='number'&&typeof y==='number')return(x-y)*dir||a-b;
+    if(typeof x==='number')return -1;if(typeof y==='number')return 1;
+    return String(x).localeCompare(String(y),'ru',{numeric:true})*dir||a-b});
+  const order=[...filled,...empty],perm={};order.forEach((old,nw)=>perm[old]=nw);
+  remapSingles((c,r)=>[c,perm[r]??r]);S.rows=order.map(i=>S.rows[i]);active=null;sel=null;render();save();
+}
+
+// one tap: centre the selected cell or range, tap again to put it back
+$('#cbCenter').onclick=()=>{const cs=selCells();if(!cs.length)return;
+  const on=cs.every(([c,r])=>(fmtOf(c,r).a||(S.cols[c]&&S.cols[c].a))==='center');
+  for(const[c,r]of cs)setFmt(c,r,{a:on?(S.cols[c].a==='center'?'left':''):'center'});paintCells();save()};
+
+render();
+}
+</script>
+</body>
+</html>
